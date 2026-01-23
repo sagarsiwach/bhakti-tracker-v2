@@ -1,39 +1,68 @@
 # Bhakti Tracker v2
 
-A spiritual practice tracker with a warm, meditative UI. Track daily mantra counts with a beautiful interface.
+A spiritual practice tracker with a warm, meditative UI. Track daily mantra counts on web and iOS.
 
 ## Tech Stack
 
-- **Runtime:** Bun
-- **Database:** SQLite (bun:sqlite)
-- **Frontend:** Svelte 5 + SvelteKit
-- **Styling:** TailwindCSS
+- **Backend:** Bun + SQLite
+- **Web:** Svelte 5 + SvelteKit + TailwindCSS
+- **Mobile:** Expo + React Native + NativeWind
 - **Deployment:** Docker
+
+## Project Structure
+
+```
+bhakti-tracker-v2/
+├── apps/
+│   ├── web/          # Svelte web app
+│   └── mobile/       # Expo iOS app
+├── server/           # Bun + SQLite API server
+├── docker-compose.yml
+└── Dockerfile
+```
 
 ## Quick Start
 
-### Development
+### 1. Start the API Server
 
 ```bash
 # Install dependencies
 bun install
 
-# Start the API server
+# Start server
 bun run server
+```
 
-# In another terminal, start the frontend
+Server runs at http://localhost:3000
+
+### 2. Web App (Development)
+
+```bash
+cd apps/web
+bun install
 bun run dev
 ```
 
-### Docker
+Web app runs at http://localhost:5173 (proxies API to :3000)
+
+### 3. Mobile App (iOS)
 
 ```bash
-# Build and run
-docker-compose up -d
+cd apps/mobile
+npm install
+npm run ios
+```
 
-# Or build manually
-docker build -t bhakti-tracker .
-docker run -p 3000:3000 -v bhakti-data:/app/data bhakti-tracker
+**Note:** Set your Mac's IP in `.env` for the mobile app to reach the server:
+```bash
+# apps/mobile/.env
+EXPO_PUBLIC_API_URL=http://192.168.x.x:3000
+```
+
+### Docker (Production)
+
+```bash
+docker-compose up -d
 ```
 
 Visit http://localhost:3000
@@ -65,24 +94,11 @@ curl -X POST http://localhost:3000/api/mantras/increment \
 curl http://localhost:3000/api/obsidian/2026-01-23
 ```
 
-Response:
-```json
-{
-  "date": "2026-01-23",
-  "mantras": [
-    {"name": "first", "count": 54, "target": 108, "percentage": 50, "complete": false},
-    {"name": "third", "count": 500, "target": 1000, "percentage": 50, "complete": false}
-  ],
-  "totalCount": 554,
-  "allComplete": false
-}
-```
-
 ## Obsidian Integration
 
 Add this to your daily note template using Dataview JS:
 
-```dataview
+```javascript
 const date = dv.current().file.name; // Assumes filename is YYYY-MM-DD
 const url = `http://localhost:3000/api/obsidian/${date}`;
 const response = await fetch(url);

@@ -2,14 +2,17 @@
 FROM oven/bun:1 AS base
 WORKDIR /app
 
-# Install dependencies
-FROM base AS deps
-COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile || bun install
+# Install dependencies for web app
+FROM base AS web-deps
+COPY apps/web/package.json ./apps/web/
+WORKDIR /app/apps/web
+RUN bun install
 
-# Build the frontend
-FROM deps AS builder
-COPY . .
+# Build the web frontend
+FROM web-deps AS web-builder
+WORKDIR /app
+COPY apps/web ./apps/web
+WORKDIR /app/apps/web
 RUN bun run build
 
 # Production image
@@ -19,12 +22,14 @@ WORKDIR /app
 # Create data directory for SQLite
 RUN mkdir -p /app/data
 
-# Copy built assets and server
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/server ./server
-COPY --from=builder /app/package.json ./
+# Copy built web assets
+COPY --from=web-builder /app/apps/web/build ./build
 
-# Install production dependencies only
+# Copy server
+COPY server ./server
+COPY package.json ./
+
+# Install server dependencies
 RUN bun install --production
 
 # Expose port
