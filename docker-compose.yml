@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  bhakti-tracker:
+    build: .
+    container_name: bhakti-tracker
+    ports:
+      - "3000:3000"
+    volumes:
+      - bhakti-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/bhakti.db
+    restart: unless-stopped
+
+volumes:
+  bhakti-data:
