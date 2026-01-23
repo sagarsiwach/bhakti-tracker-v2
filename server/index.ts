@@ -25,7 +25,8 @@ function today() {
 
 // Serve static files
 function serveStatic(path: string): Response | null {
-	const filePath = join(BUILD_DIR, path === '/' ? 'index.html' : path);
+	const actualPath = path === '/' ? 'index.html' : path;
+	const filePath = join(BUILD_DIR, actualPath);
 
 	if (!existsSync(filePath)) {
 		// Try with .html extension or index.html for directories
@@ -54,7 +55,7 @@ function serveStatic(path: string): Response | null {
 		return null;
 	}
 
-	const ext = path.split('.').pop() || '';
+	const ext = actualPath.split('.').pop() || '';
 	const mimeTypes: Record<string, string> = {
 		'html': 'text/html',
 		'css': 'text/css',
