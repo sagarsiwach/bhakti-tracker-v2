@@ -2,11 +2,6 @@ import AppIntents
 import SwiftData
 import UIKit
 
-// MARK: - Notification for UI refresh
-extension Notification.Name {
-    static let mantraDidUpdate = Notification.Name("mantraDidUpdate")
-}
-
 // MARK: - Increment First Mantra Intent
 struct IncrementFirstMantraIntent: AppIntent {
     static var title: LocalizedStringResource = "Increment First Mantra"
@@ -25,6 +20,17 @@ struct IncrementThirdMantraIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         await incrementMantra(name: "third")
+        return .result()
+    }
+}
+
+// MARK: - Increment Dandavat Intent
+struct IncrementDandavatIntent: AppIntent {
+    static var title: LocalizedStringResource = "Increment Dandavat"
+    static var description = IntentDescription("Add one count to Dandavat pranam")
+
+    func perform() async throws -> some IntentResult {
+        await incrementMantra(name: "dandavat")
         return .result()
     }
 }
@@ -50,13 +56,22 @@ struct BhaktiShortcuts: AppShortcutsProvider {
             shortTitle: "Third +1",
             systemImageName: "leaf.circle.fill"
         )
+        AppShortcut(
+            intent: IncrementDandavatIntent(),
+            phrases: [
+                "Increment Dandavat in \(.applicationName)",
+                "Log Dandavat in \(.applicationName)"
+            ],
+            shortTitle: "Dandavat +1",
+            systemImageName: "figure.stand"
+        )
     }
 }
 
 // MARK: - Helper Function
 @MainActor
 private func incrementMantra(name: String) async {
-    let schema = Schema([LocalMantra.self])
+    let schema = Schema([LocalMantra.self, LocalActivity.self])
     let config = ModelConfiguration(isStoredInMemoryOnly: false)
 
     guard let container = try? ModelContainer(for: schema, configurations: config) else {
@@ -76,7 +91,8 @@ private func incrementMantra(name: String) async {
         mantra.lastModified = Date()
         try? context.save()
     } else {
-        let target = name == "first" ? 108 : 1000
+        // Get correct target: nil for dandavat, 108 for first, 1000 for third
+        let target: Int? = name == "dandavat" ? nil : (name == "first" ? 108 : 1000)
         let mantra = LocalMantra(name: name, date: today, count: 1, target: target, pendingSync: true)
         context.insert(mantra)
         try? context.save()

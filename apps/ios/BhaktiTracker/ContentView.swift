@@ -3,18 +3,23 @@ import SwiftUI
 // MARK: - Color Theme
 struct AppTheme {
     // Light mode - warm earth tones
-    static let lightBackground = Color(red: 0.96, green: 0.91, blue: 0.84)
-    static let lightSecondary = Color(red: 0.92, green: 0.86, blue: 0.78)
-    static let lightCard = Color.white.opacity(0.7)
+    static let lightBackground = Color(red: 0.98, green: 0.96, blue: 0.93)
+    static let lightSecondary = Color(red: 0.95, green: 0.92, blue: 0.88)
+    static let lightCard = Color.white
 
     // Dark mode - rich brownish tones
-    static let darkBackground = Color(red: 0.12, green: 0.10, blue: 0.08)
-    static let darkSecondary = Color(red: 0.18, green: 0.14, blue: 0.11)
-    static let darkCard = Color(red: 0.22, green: 0.18, blue: 0.14)
+    static let darkBackground = Color(red: 0.08, green: 0.07, blue: 0.06)
+    static let darkSecondary = Color(red: 0.12, green: 0.10, blue: 0.09)
+    static let darkCard = Color(red: 0.16, green: 0.14, blue: 0.12)
 
     // Accent - saffron/orange
-    static let accent = Color(red: 0.92, green: 0.55, blue: 0.20)
-    static let accentLight = Color(red: 0.96, green: 0.72, blue: 0.45)
+    static let accent = Color(red: 0.95, green: 0.55, blue: 0.20)
+    static let accentLight = Color(red: 0.98, green: 0.75, blue: 0.45)
+    static let accentDark = Color(red: 0.85, green: 0.45, blue: 0.15)
+
+    // Additional colors
+    static let success = Color(red: 0.30, green: 0.70, blue: 0.45)
+    static let warning = Color(red: 0.95, green: 0.75, blue: 0.25)
 
     static func background(for scheme: ColorScheme) -> Color {
         scheme == .dark ? darkBackground : lightBackground
@@ -26,6 +31,10 @@ struct AppTheme {
 
     static func card(for scheme: ColorScheme) -> Color {
         scheme == .dark ? darkCard : lightCard
+    }
+
+    static func text(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? .white : Color(red: 0.15, green: 0.12, blue: 0.10)
     }
 }
 
@@ -41,36 +50,27 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
-                MantraPageView(
-                    mantraIndex: 0,
-                    selectedDate: $selectedDate,
-                    showStats: $showStats,
-                    store: store
-                )
-                .tabItem {
-                    Label("First", systemImage: "leaf.fill")
-                }
-                .tag(0)
+                // Counters Tab
+                CountersView(selectedDate: $selectedDate, showStats: $showStats, store: store)
+                    .tabItem {
+                        Label("Practice", systemImage: "hands.clap.fill")
+                    }
+                    .tag(0)
 
-                MantraPageView(
-                    mantraIndex: 1,
-                    selectedDate: $selectedDate,
-                    showStats: $showStats,
-                    store: store
-                )
-                .tabItem {
-                    Label("Third", systemImage: "leaf.circle.fill")
-                }
-                .tag(1)
+                // Daily Tab (Aarti & Satsang)
+                DailyView(selectedDate: $selectedDate, store: store)
+                    .tabItem {
+                        Label("Daily", systemImage: "checklist")
+                    }
+                    .tag(1)
             }
             .tint(AppTheme.accent)
             .onAppear {
                 configureTabBarAppearance()
-                loadMantras()
+                loadData()
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 if newPhase == .active {
-                    // Refresh when app becomes active (handles Action Button updates)
                     store.refreshFromDatabase()
                 }
             }
@@ -88,115 +88,63 @@ struct ContentView: View {
         .animation(.easeInOut, value: store.showCelebration)
     }
 
-    private func loadMantras() {
+    private func loadData() {
         Task {
-            await store.loadMantras(for: selectedDate)
+            await store.loadData(for: selectedDate)
         }
     }
 
     private func configureTabBarAppearance() {
         let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
         if colorScheme == .dark {
-            appearance.configureWithOpaqueBackground()
             appearance.backgroundColor = UIColor(AppTheme.darkSecondary)
+        } else {
+            appearance.backgroundColor = UIColor(AppTheme.lightCard)
         }
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 }
 
-// MARK: - Mantra Page View
-struct MantraPageView: View {
-    let mantraIndex: Int
+// MARK: - Counters View (Mantras + Dandavat)
+struct CountersView: View {
     @Binding var selectedDate: Date
     @Binding var showStats: Bool
     @ObservedObject var store: MantraStore
     @Environment(\.colorScheme) var colorScheme
 
-    private var currentMantra: LocalMantra? {
-        guard mantraIndex < store.mantras.count else { return nil }
-        return store.mantras[mantraIndex]
-    }
-
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background gradient
-                LinearGradient(
-                    colors: [
-                        AppTheme.background(for: colorScheme),
-                        AppTheme.secondary(for: colorScheme)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                AppTheme.background(for: colorScheme)
+                    .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // Offline banner
-                    if !store.isOnline {
-                        HStack(spacing: 8) {
-                            Image(systemName: "wifi.slash")
-                            Text("Offline mode")
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Date & Streak Header
+                        headerSection
+
+                        // Offline banner
+                        if !store.isOnline {
+                            offlineBanner
                         }
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.white)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity)
-                        .background(AppTheme.accent.opacity(0.9))
-                    }
 
-                    // Date Picker with Streak
-                    HStack {
-                        DatePickerView(selectedDate: $selectedDate, onDateChange: loadMantras)
-
-                        // Streak badge
-                        if store.currentStreak > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "flame.fill")
-                                    .foregroundStyle(.orange)
-                                Text("\(store.currentStreak)")
-                                    .fontWeight(.bold)
+                        // Mantra Cards
+                        ForEach(store.mantras, id: \.name) { mantra in
+                            MantraCard(mantra: mantra) {
+                                store.increment(mantra: mantra)
                             }
-                            .font(.caption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(AppTheme.card(for: colorScheme))
-                            .clipShape(Capsule())
                         }
+
+                        Spacer(minLength: 100)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-
-                    Spacer()
-
-                    // Mantra Counter
-                    if store.isLoading && store.mantras.isEmpty {
-                        ProgressView()
-                            .controlSize(.large)
-                            .tint(AppTheme.accent)
-                    } else if let mantra = currentMantra {
-                        MantraCounterView(mantra: mantra) {
-                            store.increment(mantra: mantra)
-                        }
-                    } else {
-                        VStack(spacing: 16) {
-                            Image(systemName: "leaf.fill")
-                                .font(.system(size: 60))
-                                .foregroundStyle(AppTheme.accent.opacity(0.5))
-                            Text("Loading...")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer()
-                    Spacer()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
                 }
             }
-            .navigationTitle(currentMantra?.displayName ?? "Mantra")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(AppTheme.background(for: colorScheme), for: .navigationBar)
+            .navigationTitle("Practice")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -211,18 +159,280 @@ struct MantraPageView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .foregroundStyle(AppTheme.accent)
-                            .rotationEffect(.degrees(store.hasPendingSync ? 360 : 0))
-                            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: store.hasPendingSync)
+                            .symbolEffect(.pulse)
                     }
                 }
             }
         }
     }
 
-    private func loadMantras() {
-        Task {
-            await store.loadMantras(for: selectedDate)
+    private var headerSection: some View {
+        HStack {
+            // Date picker
+            DatePickerView(selectedDate: $selectedDate) {
+                Task { await store.loadData(for: selectedDate) }
+            }
+
+            Spacer()
+
+            // Streak badge
+            if store.currentStreak > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(store.currentStreak)")
+                        .fontWeight(.bold)
+                    Text("days")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(AppTheme.card(for: colorScheme))
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+            }
         }
+    }
+
+    private var offlineBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+            Text("Offline mode - changes will sync later")
+        }
+        .font(.caption)
+        .fontWeight(.medium)
+        .foregroundStyle(.white)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .background(AppTheme.accent.opacity(0.9))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+// MARK: - Mantra Card
+struct MantraCard: View {
+    let mantra: LocalMantra
+    var onTap: () -> Void
+    @Environment(\.colorScheme) var colorScheme
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Icon with progress ring
+                ZStack {
+                    // Background circle
+                    Circle()
+                        .fill(AppTheme.secondary(for: colorScheme))
+                        .frame(width: 70, height: 70)
+
+                    // Progress ring (only for mantras with targets)
+                    if mantra.hasTarget {
+                        Circle()
+                            .trim(from: 0, to: mantra.progress)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accentLight],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                            )
+                            .frame(width: 70, height: 70)
+                            .rotationEffect(.degrees(-90))
+                    }
+
+                    // Icon
+                    Image(systemName: mantra.icon)
+                        .font(.system(size: 28))
+                        .foregroundStyle(mantra.isComplete ? AppTheme.success : AppTheme.accent)
+                }
+
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(mantra.displayName)
+                        .font(.headline)
+                        .foregroundStyle(AppTheme.text(for: colorScheme))
+
+                    if let target = mantra.target {
+                        Text("\(mantra.count) / \(target)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Total: \(mantra.count)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if mantra.hasTarget {
+                        Text("\(Int(mantra.progress * 100))%")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(mantra.isComplete ? AppTheme.success : AppTheme.accent)
+                    }
+                }
+
+                Spacer()
+
+                // Count display
+                VStack {
+                    Text("\(mantra.count)")
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.accent)
+                        .contentTransition(.numericText())
+
+                    if mantra.isComplete {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(AppTheme.success)
+                    }
+                }
+            }
+            .padding(16)
+            .background(AppTheme.card(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, y: 2)
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: mantra.count)
+        .onLongPressGesture(minimumDuration: 0, pressing: { pressing in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = pressing
+            }
+        }, perform: {})
+    }
+}
+
+// MARK: - Daily View (Aarti & Satsang)
+struct DailyView: View {
+    @Binding var selectedDate: Date
+    @ObservedObject var store: MantraStore
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppTheme.background(for: colorScheme)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Date picker
+                        DatePickerView(selectedDate: $selectedDate) {
+                            Task { await store.loadData(for: selectedDate) }
+                        }
+                        .padding(.horizontal)
+
+                        // Aarti Section
+                        if !store.aartiActivities.isEmpty {
+                            ActivitySection(
+                                title: "Aarti",
+                                icon: "sun.max.fill",
+                                activities: store.aartiActivities,
+                                store: store
+                            )
+                        }
+
+                        // Satsang Section
+                        if !store.satsangActivities.isEmpty {
+                            ActivitySection(
+                                title: "Satsang",
+                                icon: "book.fill",
+                                activities: store.satsangActivities,
+                                store: store
+                            )
+                        }
+
+                        Spacer(minLength: 100)
+                    }
+                    .padding(.top, 8)
+                }
+            }
+            .navigationTitle("Daily Practice")
+            .navigationBarTitleDisplayMode(.large)
+        }
+    }
+}
+
+// MARK: - Activity Section
+struct ActivitySection: View {
+    let title: String
+    let icon: String
+    let activities: [LocalActivity]
+    @ObservedObject var store: MantraStore
+    @Environment(\.colorScheme) var colorScheme
+
+    private var completedCount: Int {
+        activities.filter { $0.completed }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section Header
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(AppTheme.accent)
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Text("\(completedCount)/\(activities.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+
+            // Activity Cards
+            VStack(spacing: 8) {
+                ForEach(activities, id: \.name) { activity in
+                    ActivityRow(activity: activity) {
+                        store.toggle(activity: activity)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - Activity Row
+struct ActivityRow: View {
+    let activity: LocalActivity
+    var onToggle: () -> Void
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 14) {
+                // Icon
+                Image(systemName: activity.icon)
+                    .font(.system(size: 20))
+                    .foregroundStyle(activity.completed ? AppTheme.success : AppTheme.accent)
+                    .frame(width: 32)
+
+                // Name
+                Text(activity.displayName)
+                    .font(.body)
+                    .foregroundStyle(AppTheme.text(for: colorScheme))
+                    .strikethrough(activity.completed, color: .secondary)
+
+                Spacer()
+
+                // Checkbox
+                Image(systemName: activity.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(activity.completed ? AppTheme.success : .secondary.opacity(0.5))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(AppTheme.card(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.05), radius: 4, y: 1)
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: activity.completed)
     }
 }
 
@@ -250,9 +460,9 @@ struct DatePickerView: View {
                     .frame(width: 40, height: 40)
                     .background(AppTheme.card(for: colorScheme))
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
             }
 
-            // Date display
             VStack(spacing: 2) {
                 Text(selectedDate, format: .dateTime.weekday(.wide))
                     .font(.caption)
@@ -261,7 +471,7 @@ struct DatePickerView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
             }
-            .frame(minWidth: 80)
+            .frame(minWidth: 100)
 
             Button {
                 guard !isToday else { return }
@@ -272,10 +482,11 @@ struct DatePickerView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(isToday ? .gray : AppTheme.accent)
+                    .foregroundStyle(isToday ? .gray.opacity(0.5) : AppTheme.accent)
                     .frame(width: 40, height: 40)
                     .background(AppTheme.card(for: colorScheme))
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
             }
             .disabled(isToday)
         }

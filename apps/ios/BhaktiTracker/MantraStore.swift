@@ -8,16 +8,17 @@ extension Notification.Name {
     static let mantraDidUpdate = Notification.Name("mantraDidUpdate")
 }
 
+// MARK: - Local Mantra Model
 @Model
 class LocalMantra {
     var name: String
     var date: String
     var count: Int
-    var target: Int
+    var target: Int?  // Optional - nil means no target (like Dandavat)
     var pendingSync: Bool
     var lastModified: Date
 
-    init(name: String, date: String, count: Int, target: Int, pendingSync: Bool = false) {
+    init(name: String, date: String, count: Int, target: Int?, pendingSync: Bool = false) {
         self.name = name
         self.date = date
         self.count = count
@@ -27,27 +28,94 @@ class LocalMantra {
     }
 
     var progress: Double {
-        min(Double(count) / Double(target), 1.0)
+        guard let target = target, target > 0 else { return 0 }
+        return min(Double(count) / Double(target), 1.0)
     }
 
     var isComplete: Bool {
-        count >= target
+        guard let target = target else { return false }
+        return count >= target
+    }
+
+    var hasTarget: Bool {
+        target != nil
     }
 
     var displayName: String {
-        name.capitalized
+        switch name {
+        case "first": return "First"
+        case "third": return "Third"
+        case "dandavat": return "Dandavat"
+        default: return name.capitalized
+        }
+    }
+
+    var icon: String {
+        switch name {
+        case "first": return "leaf.fill"
+        case "third": return "leaf.circle.fill"
+        case "dandavat": return "figure.stand"
+        default: return "circle.fill"
+        }
     }
 }
 
+// MARK: - Local Activity Model
+@Model
+class LocalActivity {
+    var name: String
+    var displayName: String
+    var category: String
+    var date: String
+    var completed: Bool
+    var completedAt: Date?
+    var pendingSync: Bool
+
+    init(name: String, displayName: String, category: String, date: String, completed: Bool = false, pendingSync: Bool = false) {
+        self.name = name
+        self.displayName = displayName
+        self.category = category
+        self.date = date
+        self.completed = completed
+        self.pendingSync = pendingSync
+    }
+
+    var icon: String {
+        switch name {
+        case "morning_aarti": return "sunrise.fill"
+        case "afternoon_aarti": return "sun.max.fill"
+        case "evening_aarti": return "sunset.fill"
+        case "before_food_aarti": return "fork.knife"
+        case "after_food_aarti": return "fork.knife.circle.fill"
+        case "mangalacharan": return "book.fill"
+        default: return "checkmark.circle"
+        }
+    }
+}
+
+// MARK: - API Response Models
 struct MantraDTO: Codable {
     let name: String
     var count: Int
-    let target: Int
+    let target: Int?
 }
 
 struct MantrasResponse: Codable {
     let date: String
     let mantras: [MantraDTO]
+}
+
+struct ActivityDTO: Codable {
+    let name: String
+    let displayName: String
+    let category: String
+    let completed: Bool
+    let completedAt: String?
+}
+
+struct ActivitiesResponse: Codable {
+    let date: String
+    let activities: [ActivityDTO]
 }
 
 // MARK: - User Preferences
@@ -71,10 +139,11 @@ class MantraStore: ObservableObject {
     private let baseURL = "https://bhakti.classicgroup.asia"
 
     // Retry queue
-    private var retryQueue: [(LocalMantra, Int)] = [] // (mantra, attemptCount)
+    private var retryQueue: [(LocalMantra, Int)] = []
     private var isProcessingRetryQueue = false
 
     @Published var mantras: [LocalMantra] = []
+    @Published var activities: [LocalActivity] = []
     @Published var isLoading = false
     @Published var isOnline = true
     @Published var hasPendingSync = false
@@ -82,14 +151,25 @@ class MantraStore: ObservableObject {
     @Published var showCelebration = false
     @Published var celebratingMantra: String?
 
-    // Default mantras when offline and no data exists
-    private let defaultMantras = [
+    // Default mantras
+    private let defaultMantras: [(name: String, target: Int?)] = [
         ("first", 108),
-        ("third", 1000)
+        ("third", 1000),
+        ("dandavat", nil)  // No target
+    ]
+
+    // Default activities
+    private let defaultActivities: [(name: String, displayName: String, category: String)] = [
+        ("morning_aarti", "Morning Aarti", "aarti"),
+        ("afternoon_aarti", "Afternoon Aarti", "aarti"),
+        ("evening_aarti", "Evening Aarti", "aarti"),
+        ("before_food_aarti", "Before Food Aarti", "satsang"),
+        ("after_food_aarti", "After Food Aarti", "satsang"),
+        ("mangalacharan", "Mangalacharan", "satsang")
     ]
 
     init() {
-        let schema = Schema([LocalMantra.self])
+        let schema = Schema([LocalMantra.self, LocalActivity.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: false)
         self.modelContainer = try! ModelContainer(for: schema, configurations: config)
         self.modelContext = modelContainer.mainContext
@@ -106,27 +186,50 @@ class MantraStore: ObservableObject {
         }
     }
 
-    // MARK: - Refresh from database (for Action Button updates)
+    // MARK: - Computed Properties
+    var aartiActivities: [LocalActivity] {
+        activities.filter { $0.category == "aarti" }
+    }
+
+    var satsangActivities: [LocalActivity] {
+        activities.filter { $0.category == "satsang" }
+    }
+
+    var countMantras: [LocalMantra] {
+        mantras.filter { $0.hasTarget }
+    }
+
+    var trendMantras: [LocalMantra] {
+        mantras.filter { !$0.hasTarget }
+    }
+
+    // MARK: - Refresh from database
     func refreshFromDatabase() {
         guard !mantras.isEmpty else { return }
         let dateString = mantras.first?.date ?? formatDate(Date())
-        loadLocalMantras(for: dateString)
+        loadLocalData(for: dateString)
     }
 
-    func loadMantras(for date: Date) async {
+    func loadData(for date: Date) async {
         isLoading = true
         let dateString = formatDate(date)
 
-        // First, load from local storage
-        loadLocalMantras(for: dateString)
+        // Load from local storage first
+        loadLocalData(for: dateString)
 
         // Calculate streak
         await calculateStreak()
 
-        // Then try to sync with server
+        // Sync with server
         await syncWithServer(for: date)
 
         isLoading = false
+    }
+
+    private func loadLocalData(for dateString: String) {
+        loadLocalMantras(for: dateString)
+        loadLocalActivities(for: dateString)
+        updatePendingSyncStatus()
     }
 
     private func loadLocalMantras(for dateString: String) {
@@ -135,13 +238,29 @@ class MantraStore: ObservableObject {
         )
 
         if let localMantras = try? modelContext.fetch(descriptor), !localMantras.isEmpty {
-            mantras = localMantras.sorted { $0.name < $1.name }
+            mantras = localMantras.sorted {
+                let order = ["first": 0, "third": 1, "dandavat": 2]
+                return (order[$0.name] ?? 99) < (order[$1.name] ?? 99)
+            }
         } else {
-            // Create default mantras for this date
             createDefaultMantras(for: dateString)
         }
+    }
 
-        updatePendingSyncStatus()
+    private func loadLocalActivities(for dateString: String) {
+        let descriptor = FetchDescriptor<LocalActivity>(
+            predicate: #Predicate { $0.date == dateString }
+        )
+
+        if let localActivities = try? modelContext.fetch(descriptor), !localActivities.isEmpty {
+            activities = localActivities.sorted {
+                let order = ["morning_aarti": 0, "afternoon_aarti": 1, "evening_aarti": 2,
+                            "before_food_aarti": 3, "after_food_aarti": 4, "mangalacharan": 5]
+                return (order[$0.name] ?? 99) < (order[$1.name] ?? 99)
+            }
+        } else {
+            createDefaultActivities(for: dateString)
+        }
     }
 
     private func createDefaultMantras(for dateString: String) {
@@ -152,40 +271,51 @@ class MantraStore: ObservableObject {
             newMantras.append(mantra)
         }
         try? modelContext.save()
-        mantras = newMantras.sorted { $0.name < $1.name }
+        mantras = newMantras.sorted {
+            let order = ["first": 0, "third": 1, "dandavat": 2]
+            return (order[$0.name] ?? 99) < (order[$1.name] ?? 99)
+        }
     }
 
+    private func createDefaultActivities(for dateString: String) {
+        var newActivities: [LocalActivity] = []
+        for (name, displayName, category) in defaultActivities {
+            let activity = LocalActivity(name: name, displayName: displayName, category: category, date: dateString, pendingSync: true)
+            modelContext.insert(activity)
+            newActivities.append(activity)
+        }
+        try? modelContext.save()
+        activities = newActivities.sorted {
+            let order = ["morning_aarti": 0, "afternoon_aarti": 1, "evening_aarti": 2,
+                        "before_food_aarti": 3, "after_food_aarti": 4, "mangalacharan": 5]
+            return (order[$0.name] ?? 99) < (order[$1.name] ?? 99)
+        }
+    }
+
+    // MARK: - Server Sync
     private func syncWithServer(for date: Date) async {
         let dateString = formatDate(date)
 
-        // Try to fetch from server
+        // Sync mantras
         do {
-            let serverMantras = try await fetchFromServer(date: date)
+            let serverMantras = try await fetchMantrasFromServer(date: date)
             isOnline = true
 
-            // Conflict resolution: compare timestamps and counts
             for serverMantra in serverMantras {
                 if let local = mantras.first(where: { $0.name == serverMantra.name }) {
                     if local.pendingSync {
-                        // Local has pending changes
                         if local.count > serverMantra.count {
-                            // Local is ahead, push to server
-                            await pushToServer(mantra: local)
+                            await pushMantraToServer(mantra: local)
                         } else if local.count < serverMantra.count {
-                            // Server is ahead, update local
                             local.count = serverMantra.count
                             local.pendingSync = false
-                        }
-                        // If equal, just mark as synced
-                        else {
+                        } else {
                             local.pendingSync = false
                         }
                     } else {
-                        // No local changes, accept server data
                         local.count = serverMantra.count
                     }
                 } else {
-                    // New mantra from server
                     let newMantra = LocalMantra(
                         name: serverMantra.name,
                         date: dateString,
@@ -197,35 +327,61 @@ class MantraStore: ObservableObject {
                 }
             }
             try? modelContext.save()
-            mantras = mantras.sorted { $0.name < $1.name }
-
-            // Push any remaining pending syncs
-            await pushPendingSyncs()
-
-            // Process retry queue
-            await processRetryQueue()
         } catch {
             isOnline = false
+        }
+
+        // Sync activities
+        do {
+            let serverActivities = try await fetchActivitiesFromServer(date: date)
+
+            for serverActivity in serverActivities {
+                if let local = activities.first(where: { $0.name == serverActivity.name }) {
+                    if local.pendingSync && local.completed != serverActivity.completed {
+                        await pushActivityToServer(activity: local)
+                    } else {
+                        local.completed = serverActivity.completed
+                        local.pendingSync = false
+                    }
+                }
+            }
+            try? modelContext.save()
+        } catch {
             // Continue with local data
         }
 
         updatePendingSyncStatus()
     }
 
-    private func fetchFromServer(date: Date) async throws -> [MantraDTO] {
+    private func fetchMantrasFromServer(date: Date) async throws -> [MantraDTO] {
         let dateString = formatDate(date)
         guard let url = URL(string: "\(baseURL)/api/mantras/\(dateString)") else {
             throw APIError.invalidURL
         }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 5 // Short timeout for offline detection
+        request.timeoutInterval = 5
 
         let (data, _) = try await URLSession.shared.data(for: request)
         let response = try JSONDecoder().decode(MantrasResponse.self, from: data)
         return response.mantras
     }
 
+    private func fetchActivitiesFromServer(date: Date) async throws -> [ActivityDTO] {
+        let dateString = formatDate(date)
+        guard let url = URL(string: "\(baseURL)/api/activities/\(dateString)") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(ActivitiesResponse.self, from: data)
+        return response.activities
+    }
+
+    // MARK: - Increment Mantra
     func increment(mantra: LocalMantra) {
         let wasComplete = mantra.isComplete
 
@@ -240,24 +396,21 @@ class MantraStore: ObservableObject {
 
         // Sound feedback if enabled
         if UserPreferences.shared.soundEnabled {
-            AudioServicesPlaySystemSound(1104) // Subtle tick sound
+            AudioServicesPlaySystemSound(1104)
         }
 
         // Check for completion celebration
-        if mantra.isComplete && !wasComplete {
+        if mantra.hasTarget && mantra.isComplete && !wasComplete {
             celebratingMantra = mantra.name
             showCelebration = true
 
-            // Success haptic
             let notificationFeedback = UINotificationFeedbackGenerator()
             notificationFeedback.notificationOccurred(.success)
 
-            // Celebration sound
             if UserPreferences.shared.soundEnabled {
-                AudioServicesPlaySystemSound(1025) // Success sound
+                AudioServicesPlaySystemSound(1025)
             }
 
-            // Auto-hide celebration after 3 seconds
             Task {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await MainActor.run {
@@ -267,48 +420,36 @@ class MantraStore: ObservableObject {
             }
         }
 
-        // Try to sync immediately
         Task {
-            await pushToServer(mantra: mantra)
+            await pushMantraToServer(mantra: mantra)
             updatePendingSyncStatus()
         }
     }
 
-    // MARK: - Streak Calculation
-    func calculateStreak() async {
-        var streak = 0
-        var checkDate = Date()
-        let calendar = Calendar.current
+    // MARK: - Toggle Activity
+    func toggle(activity: LocalActivity) {
+        activity.completed.toggle()
+        activity.completedAt = activity.completed ? Date() : nil
+        activity.pendingSync = true
+        try? modelContext.save()
 
-        while true {
-            let dateString = formatDate(checkDate)
-            let descriptor = FetchDescriptor<LocalMantra>(
-                predicate: #Predicate { $0.date == dateString }
-            )
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
 
-            guard let dayMantras = try? modelContext.fetch(descriptor),
-                  !dayMantras.isEmpty else {
-                break
-            }
-
-            // Check if all mantras are complete for this day
-            let allComplete = dayMantras.allSatisfy { $0.isComplete }
-
-            if allComplete {
-                streak += 1
-                checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
-            } else if dateString == formatDate(Date()) {
-                // Today isn't complete yet, but check yesterday
-                checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
-            } else {
-                break
-            }
+        // Sound feedback if enabled
+        if UserPreferences.shared.soundEnabled {
+            AudioServicesPlaySystemSound(activity.completed ? 1104 : 1105)
         }
 
-        currentStreak = streak
+        Task {
+            await pushActivityToServer(activity: activity)
+            updatePendingSyncStatus()
+        }
     }
 
-    private func pushToServer(mantra: LocalMantra) async {
+    // MARK: - Push to Server
+    private func pushMantraToServer(mantra: LocalMantra) async {
         guard let url = URL(string: "\(baseURL)/api/mantras") else { return }
 
         var request = URLRequest(url: url)
@@ -336,73 +477,92 @@ class MantraStore: ObservableObject {
         } catch {
             await MainActor.run {
                 isOnline = false
-                // Add to retry queue with exponential backoff
-                addToRetryQueue(mantra: mantra)
             }
         }
     }
 
-    // MARK: - Retry Queue with Exponential Backoff
-    private func addToRetryQueue(mantra: LocalMantra) {
-        // Check if already in queue
-        if !retryQueue.contains(where: { $0.0.name == mantra.name && $0.0.date == mantra.date }) {
-            retryQueue.append((mantra, 0))
-        }
+    private func pushActivityToServer(activity: LocalActivity) async {
+        guard let url = URL(string: "\(baseURL)/api/activities") else { return }
 
-        // Start processing if not already
-        if !isProcessingRetryQueue {
-            Task {
-                await processRetryQueue()
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 5
+
+        let body: [String: Any] = [
+            "name": activity.name,
+            "date": activity.date,
+            "completed": activity.completed
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    activity.pendingSync = false
+                    try? modelContext.save()
+                    isOnline = true
+                }
+            }
+        } catch {
+            await MainActor.run {
+                isOnline = false
             }
         }
     }
 
-    private func processRetryQueue() async {
-        guard !isProcessingRetryQueue, !retryQueue.isEmpty else { return }
-        isProcessingRetryQueue = true
+    // MARK: - Streak Calculation
+    func calculateStreak() async {
+        var streak = 0
+        var checkDate = Date()
+        let calendar = Calendar.current
 
-        var failedItems: [(LocalMantra, Int)] = []
+        while true {
+            let dateString = formatDate(checkDate)
+            let mantraDescriptor = FetchDescriptor<LocalMantra>(
+                predicate: #Predicate { $0.date == dateString }
+            )
 
-        for (mantra, attempts) in retryQueue {
-            // Exponential backoff: 1s, 2s, 4s, 8s, 16s...
-            let delay = UInt64(pow(2.0, Double(attempts))) * 1_000_000_000
-            try? await Task.sleep(nanoseconds: min(delay, 30_000_000_000)) // Max 30s
+            guard let dayMantras = try? modelContext.fetch(mantraDescriptor),
+                  !dayMantras.isEmpty else {
+                break
+            }
 
-            await pushToServer(mantra: mantra)
+            let mantrasWithTargets = dayMantras.filter { $0.target != nil }
+            let allMantrasComplete = mantrasWithTargets.allSatisfy { $0.isComplete }
 
-            if mantra.pendingSync && attempts < 5 {
-                // Still pending, re-add with incremented attempts
-                failedItems.append((mantra, attempts + 1))
+            if allMantrasComplete && !mantrasWithTargets.isEmpty {
+                streak += 1
+                checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
+            } else if dateString == formatDate(Date()) {
+                checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
+            } else {
+                break
             }
         }
 
-        retryQueue = failedItems
-        isProcessingRetryQueue = false
-    }
-
-    private func pushPendingSyncs() async {
-        let descriptor = FetchDescriptor<LocalMantra>(
-            predicate: #Predicate { $0.pendingSync == true }
-        )
-
-        guard let pending = try? modelContext.fetch(descriptor) else { return }
-
-        for mantra in pending {
-            await pushToServer(mantra: mantra)
-        }
+        currentStreak = streak
     }
 
     func syncNow() async {
         guard !mantras.isEmpty else { return }
         let date = dateFromString(mantras.first?.date ?? formatDate(Date()))
-        await loadMantras(for: date)
+        await loadData(for: date)
     }
 
     private func updatePendingSyncStatus() {
-        let descriptor = FetchDescriptor<LocalMantra>(
+        let mantraDescriptor = FetchDescriptor<LocalMantra>(
             predicate: #Predicate { $0.pendingSync == true }
         )
-        hasPendingSync = (try? modelContext.fetchCount(descriptor)) ?? 0 > 0
+        let activityDescriptor = FetchDescriptor<LocalActivity>(
+            predicate: #Predicate { $0.pendingSync == true }
+        )
+
+        let mantraPending = (try? modelContext.fetchCount(mantraDescriptor)) ?? 0
+        let activityPending = (try? modelContext.fetchCount(activityDescriptor)) ?? 0
+        hasPendingSync = (mantraPending + activityPending) > 0
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -418,8 +578,8 @@ class MantraStore: ObservableObject {
     }
 
     // MARK: - Statistics
-    func getWeeklyStats() async -> [(date: String, first: Int, third: Int)] {
-        var stats: [(date: String, first: Int, third: Int)] = []
+    func getWeeklyStats() async -> [(date: String, first: Int, third: Int, dandavat: Int)] {
+        var stats: [(date: String, first: Int, third: Int, dandavat: Int)] = []
         let calendar = Calendar.current
 
         for dayOffset in (0..<7).reversed() {
@@ -433,9 +593,10 @@ class MantraStore: ObservableObject {
             if let dayMantras = try? modelContext.fetch(descriptor) {
                 let first = dayMantras.first { $0.name == "first" }?.count ?? 0
                 let third = dayMantras.first { $0.name == "third" }?.count ?? 0
-                stats.append((dateString, first, third))
+                let dandavat = dayMantras.first { $0.name == "dandavat" }?.count ?? 0
+                stats.append((dateString, first, third, dandavat))
             } else {
-                stats.append((dateString, 0, 0))
+                stats.append((dateString, 0, 0, 0))
             }
         }
 

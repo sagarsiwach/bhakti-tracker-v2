@@ -5,7 +5,7 @@ struct StatisticsView: View {
     @ObservedObject var store: MantraStore
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.dismiss) var dismiss
-    @State private var weeklyStats: [(date: String, first: Int, third: Int)] = []
+    @State private var weeklyStats: [(date: String, first: Int, third: Int, dandavat: Int)] = []
     @State private var isLoading = true
 
     var body: some View {
@@ -117,11 +117,19 @@ struct StatisticsView: View {
                         )
                         .foregroundStyle(AppTheme.accentLight)
                         .position(by: .value("Type", "Third"))
+
+                        BarMark(
+                            x: .value("Date", formatShortDate(stat.date)),
+                            y: .value("Count", stat.dandavat)
+                        )
+                        .foregroundStyle(AppTheme.success)
+                        .position(by: .value("Type", "Dandavat"))
                     }
                 }
                 .chartForegroundStyleScale([
                     "First": AppTheme.accent,
-                    "Third": AppTheme.accentLight
+                    "Third": AppTheme.accentLight,
+                    "Dandavat": AppTheme.success
                 ])
                 .frame(height: 200)
             }
@@ -133,6 +141,9 @@ struct StatisticsView: View {
                 Label("Third", systemImage: "circle.fill")
                     .font(.caption)
                     .foregroundStyle(AppTheme.accentLight)
+                Label("Dandavat", systemImage: "circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.success)
             }
         }
         .padding()
