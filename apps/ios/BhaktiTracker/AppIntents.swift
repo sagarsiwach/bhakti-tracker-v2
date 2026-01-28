@@ -2,6 +2,11 @@ import AppIntents
 import SwiftData
 import UIKit
 
+// MARK: - Notification for UI refresh
+extension Notification.Name {
+    static let mantraDidUpdate = Notification.Name("mantraDidUpdate")
+}
+
 // MARK: - Increment First Mantra Intent
 struct IncrementFirstMantraIntent: AppIntent {
     static var title: LocalizedStringResource = "Increment First Mantra"
@@ -80,6 +85,9 @@ private func incrementMantra(name: String) async {
     // Haptic feedback
     let feedback = UIImpactFeedbackGenerator(style: .medium)
     feedback.impactOccurred()
+
+    // Notify the app to refresh UI
+    NotificationCenter.default.post(name: .mantraDidUpdate, object: nil)
 }
 
 private func formatDate(_ date: Date) -> String {

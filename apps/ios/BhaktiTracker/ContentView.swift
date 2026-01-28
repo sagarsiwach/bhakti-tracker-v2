@@ -33,36 +33,59 @@ struct AppTheme {
 struct ContentView: View {
     @EnvironmentObject var store: MantraStore
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.scenePhase) var scenePhase
     @State private var selectedDate = Date()
     @State private var selectedTab = 0
+    @State private var showStats = false
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            MantraPageView(
-                mantraIndex: 0,
-                selectedDate: $selectedDate,
-                store: store
-            )
-            .tabItem {
-                Label("First", systemImage: "leaf.fill")
-            }
-            .tag(0)
+        ZStack {
+            TabView(selection: $selectedTab) {
+                MantraPageView(
+                    mantraIndex: 0,
+                    selectedDate: $selectedDate,
+                    showStats: $showStats,
+                    store: store
+                )
+                .tabItem {
+                    Label("First", systemImage: "leaf.fill")
+                }
+                .tag(0)
 
-            MantraPageView(
-                mantraIndex: 1,
-                selectedDate: $selectedDate,
-                store: store
-            )
-            .tabItem {
-                Label("Third", systemImage: "leaf.circle.fill")
+                MantraPageView(
+                    mantraIndex: 1,
+                    selectedDate: $selectedDate,
+                    showStats: $showStats,
+                    store: store
+                )
+                .tabItem {
+                    Label("Third", systemImage: "leaf.circle.fill")
+                }
+                .tag(1)
             }
-            .tag(1)
+            .tint(AppTheme.accent)
+            .onAppear {
+                configureTabBarAppearance()
+                loadMantras()
+            }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                if newPhase == .active {
+                    // Refresh when app becomes active (handles Action Button updates)
+                    store.refreshFromDatabase()
+                }
+            }
+            .sheet(isPresented: $showStats) {
+                StatisticsView(store: store)
+            }
+
+            // Celebration overlay
+            if store.showCelebration, let mantraName = store.celebratingMantra {
+                CelebrationOverlay(mantraName: mantraName, isShowing: $store.showCelebration)
+                    .transition(.opacity)
+                    .zIndex(100)
+            }
         }
-        .tint(AppTheme.accent)
-        .onAppear {
-            configureTabBarAppearance()
-            loadMantras()
-        }
+        .animation(.easeInOut, value: store.showCelebration)
     }
 
     private func loadMantras() {
@@ -86,6 +109,7 @@ struct ContentView: View {
 struct MantraPageView: View {
     let mantraIndex: Int
     @Binding var selectedDate: Date
+    @Binding var showStats: Bool
     @ObservedObject var store: MantraStore
     @Environment(\.colorScheme) var colorScheme
 
@@ -123,10 +147,27 @@ struct MantraPageView: View {
                         .background(AppTheme.accent.opacity(0.9))
                     }
 
-                    // Date Picker
-                    DatePickerView(selectedDate: $selectedDate, onDateChange: loadMantras)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
+                    // Date Picker with Streak
+                    HStack {
+                        DatePickerView(selectedDate: $selectedDate, onDateChange: loadMantras)
+
+                        // Streak badge
+                        if store.currentStreak > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .foregroundStyle(.orange)
+                                Text("\(store.currentStreak)")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(AppTheme.card(for: colorScheme))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
 
                     Spacer()
 
@@ -157,6 +198,15 @@ struct MantraPageView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(AppTheme.background(for: colorScheme), for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showStats = true
+                    } label: {
+                        Image(systemName: "chart.bar.fill")
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                }
+
                 if store.hasPendingSync {
                     ToolbarItem(placement: .topBarTrailing) {
                         Image(systemName: "arrow.triangle.2.circlepath")
@@ -187,7 +237,7 @@ struct DatePickerView: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
@@ -197,12 +247,10 @@ struct DatePickerView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(AppTheme.accent)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 40)
                     .background(AppTheme.card(for: colorScheme))
                     .clipShape(Circle())
             }
-
-            Spacer()
 
             // Date display
             VStack(spacing: 2) {
@@ -210,11 +258,10 @@ struct DatePickerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(selectedDate, format: .dateTime.day().month(.abbreviated))
-                    .font(.title3)
+                    .font(.subheadline)
                     .fontWeight(.semibold)
             }
-
-            Spacer()
+            .frame(minWidth: 80)
 
             Button {
                 guard !isToday else { return }
@@ -226,7 +273,7 @@ struct DatePickerView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(isToday ? .gray : AppTheme.accent)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 40)
                     .background(AppTheme.card(for: colorScheme))
                     .clipShape(Circle())
             }
