@@ -44,9 +44,11 @@ struct MantraCounterView: View {
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.1), value: mantra.count)
 
-                        Text("of \(mantra.target)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        if let target = mantra.target {
+                            Text("of \(target)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
 
                         if mantra.isComplete {
                             Label("Complete", systemImage: "checkmark.circle.fill")
