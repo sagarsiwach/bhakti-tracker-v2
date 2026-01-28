@@ -3,7 +3,10 @@ import {
 	incrementMantra,
 	setMantraCount,
 	getDailySummary,
-	getWeeklySummary
+	getWeeklySummary,
+	getActivitiesForDate,
+	toggleActivity,
+	DEFAULT_ACTIVITIES
 } from './db';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -125,6 +128,34 @@ const server = Bun.serve({
 				return Response.json(result, { headers: jsonHeaders });
 			}
 
+			// GET /api/activities - Get today's daily activities
+			if (path === '/api/activities' && req.method === 'GET') {
+				const date = url.searchParams.get('date') || today();
+				const activities = getActivitiesForDate(date);
+				return Response.json({ date, activities }, { headers: jsonHeaders });
+			}
+
+			// GET /api/activities/:date - Get activities for specific date
+			const activitiesMatch = path.match(/^\/api\/activities\/(\d{4}-\d{2}-\d{2})$/);
+			if (activitiesMatch && req.method === 'GET') {
+				const date = activitiesMatch[1];
+				const activities = getActivitiesForDate(date);
+				return Response.json({ date, activities }, { headers: jsonHeaders });
+			}
+
+			// PUT /api/activities - Toggle activity completion
+			if (path === '/api/activities' && req.method === 'PUT') {
+				const body = await req.json() as { name: string; date?: string; completed: boolean };
+				const date = body.date || today();
+				const result = toggleActivity(body.name, date, body.completed);
+				return Response.json(result, { headers: jsonHeaders });
+			}
+
+			// GET /api/activities/list - Get list of all activity types
+			if (path === '/api/activities/list' && req.method === 'GET') {
+				return Response.json({ activities: DEFAULT_ACTIVITIES }, { headers: jsonHeaders });
+			}
+
 			// GET /api/summary/:date - Get daily summary for Obsidian
 			const summaryMatch = path.match(/^\/api\/summary\/(\d{4}-\d{2}-\d{2})$/);
 			if (summaryMatch && req.method === 'GET') {
@@ -149,7 +180,7 @@ const server = Bun.serve({
 				const start = startDate.toISOString().split('T')[0];
 
 				const summary = getWeeklySummary(start, end);
-				return Response.json({ start, end, data: summary }, { headers: jsonHeaders });
+				return Response.json({ start, end, ...summary }, { headers: jsonHeaders });
 			}
 
 			// GET /api/obsidian/:date - Formatted summary for Obsidian daily notes
@@ -165,11 +196,23 @@ const server = Bun.serve({
 						name: m.name,
 						count: m.count,
 						target: m.target,
-						percentage: Math.round((m.count / m.target) * 100),
-						complete: m.count >= m.target
+						percentage: m.target ? Math.round((m.count / m.target) * 100) : null,
+						complete: m.target ? m.count >= m.target : null
 					})),
-					totalCount: summary.mantras.reduce((acc: number, m: any) => acc + m.count, 0),
-					allComplete: summary.mantras.every((m: any) => m.count >= m.target)
+					aarti: summary.aarti.map((a: any) => ({
+						name: a.displayName,
+						completed: a.completed
+					})),
+					satsang: summary.satsang.map((s: any) => ({
+						name: s.displayName,
+						completed: s.completed
+					})),
+					totalMantraCount: summary.mantras.reduce((acc: number, m: any) => acc + m.count, 0),
+					allMantrasComplete: summary.mantras
+						.filter((m: any) => m.target !== null)
+						.every((m: any) => m.count >= m.target),
+					allAartiComplete: summary.aarti.every((a: any) => a.completed),
+					allSatsangComplete: summary.satsang.every((s: any) => s.completed)
 				};
 
 				return Response.json(formatted, { headers: jsonHeaders });

@@ -18,9 +18,19 @@ db.exec(`
 		name TEXT NOT NULL,
 		date TEXT NOT NULL,
 		count INTEGER DEFAULT 0,
-		target INTEGER DEFAULT 108,
+		target INTEGER,
 		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 		updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(name, date)
+	);
+
+	CREATE TABLE IF NOT EXISTS daily_activities (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		date TEXT NOT NULL,
+		completed INTEGER DEFAULT 0,
+		completed_at TEXT,
+		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(name, date)
 	);
 
@@ -35,12 +45,26 @@ db.exec(`
 
 	CREATE INDEX IF NOT EXISTS idx_mantras_date ON mantras(date);
 	CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
+	CREATE INDEX IF NOT EXISTS idx_daily_activities_date ON daily_activities(date);
 `);
 
-// Default mantras with their targets
+// Default mantras with their targets (null = no target, just tracking)
 export const DEFAULT_MANTRAS = [
 	{ name: 'first', target: 108 },
-	{ name: 'third', target: 1000 }
+	{ name: 'third', target: 1000 },
+	{ name: 'dandavat', target: null }  // No target, just trend tracking
+];
+
+// Daily activities (checkboxes)
+export const DEFAULT_ACTIVITIES = [
+	// Aarti
+	{ name: 'morning_aarti', category: 'aarti', displayName: 'Morning Aarti' },
+	{ name: 'afternoon_aarti', category: 'aarti', displayName: 'Afternoon Aarti' },
+	{ name: 'evening_aarti', category: 'aarti', displayName: 'Evening Aarti' },
+	// Satsang
+	{ name: 'before_food_aarti', category: 'satsang', displayName: 'Before Food Aarti' },
+	{ name: 'after_food_aarti', category: 'satsang', displayName: 'After Food Aarti' },
+	{ name: 'mangalacharan', category: 'satsang', displayName: 'Mangalacharan' }
 ];
 
 export function ensureMantrasForDate(date: string) {
@@ -54,6 +78,17 @@ export function ensureMantrasForDate(date: string) {
 	}
 }
 
+export function ensureActivitiesForDate(date: string) {
+	const stmt = db.prepare(`
+		INSERT OR IGNORE INTO daily_activities (name, date, completed)
+		VALUES (?, ?, 0)
+	`);
+
+	for (const activity of DEFAULT_ACTIVITIES) {
+		stmt.run(activity.name, date);
+	}
+}
+
 export function getMantrasForDate(date: string) {
 	ensureMantrasForDate(date);
 	return db.prepare(`
@@ -64,9 +99,41 @@ export function getMantrasForDate(date: string) {
 			CASE name
 				WHEN 'first' THEN 1
 				WHEN 'third' THEN 2
-				ELSE 3
+				WHEN 'dandavat' THEN 3
+				ELSE 4
 			END
 	`).all(date);
+}
+
+export function getActivitiesForDate(date: string) {
+	ensureActivitiesForDate(date);
+	const rows = db.prepare(`
+		SELECT name, completed, completed_at
+		FROM daily_activities
+		WHERE date = ?
+		ORDER BY
+			CASE name
+				WHEN 'morning_aarti' THEN 1
+				WHEN 'afternoon_aarti' THEN 2
+				WHEN 'evening_aarti' THEN 3
+				WHEN 'before_food_aarti' THEN 4
+				WHEN 'after_food_aarti' THEN 5
+				WHEN 'mangalacharan' THEN 6
+				ELSE 7
+			END
+	`).all(date) as { name: string; completed: number; completed_at: string | null }[];
+
+	// Enrich with display names and categories
+	return rows.map(row => {
+		const meta = DEFAULT_ACTIVITIES.find(a => a.name === row.name);
+		return {
+			name: row.name,
+			displayName: meta?.displayName || row.name,
+			category: meta?.category || 'other',
+			completed: row.completed === 1,
+			completedAt: row.completed_at
+		};
+	});
 }
 
 export function incrementMantra(name: string, date: string) {
@@ -95,15 +162,44 @@ export function setMantraCount(name: string, date: string, count: number) {
 	`).get(name, date);
 }
 
+export function toggleActivity(name: string, date: string, completed: boolean) {
+	ensureActivitiesForDate(date);
+	const completedAt = completed ? new Date().toISOString() : null;
+
+	db.prepare(`
+		UPDATE daily_activities
+		SET completed = ?, completed_at = ?
+		WHERE name = ? AND date = ?
+	`).run(completed ? 1 : 0, completedAt, name, date);
+
+	const row = db.prepare(`
+		SELECT name, completed, completed_at FROM daily_activities WHERE name = ? AND date = ?
+	`).get(name, date) as { name: string; completed: number; completed_at: string | null };
+
+	const meta = DEFAULT_ACTIVITIES.find(a => a.name === row.name);
+	return {
+		name: row.name,
+		displayName: meta?.displayName || row.name,
+		category: meta?.category || 'other',
+		completed: row.completed === 1,
+		completedAt: row.completed_at
+	};
+}
+
 export function getDailySummary(date: string) {
 	const mantras = getMantrasForDate(date);
+	const dailyActivities = getActivitiesForDate(date);
 	const activities = db.prepare(`
 		SELECT type, duration_minutes, notes
 		FROM activities
 		WHERE date = ?
 	`).all(date);
 
-	return { date, mantras, activities };
+	// Group daily activities by category
+	const aarti = dailyActivities.filter(a => a.category === 'aarti');
+	const satsang = dailyActivities.filter(a => a.category === 'satsang');
+
+	return { date, mantras, aarti, satsang, activities };
 }
 
 export function getWeeklySummary(startDate: string, endDate: string) {
@@ -114,5 +210,12 @@ export function getWeeklySummary(startDate: string, endDate: string) {
 		ORDER BY date, name
 	`).all(startDate, endDate);
 
-	return mantras;
+	const activities = db.prepare(`
+		SELECT date, name, completed
+		FROM daily_activities
+		WHERE date >= ? AND date <= ?
+		ORDER BY date, name
+	`).all(startDate, endDate);
+
+	return { mantras, activities };
 }
