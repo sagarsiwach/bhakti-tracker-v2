@@ -26,6 +26,9 @@ function today() {
 	return new Date().toISOString().split('T')[0];
 }
 
+// Track active mantra for action button (in-memory, resets on restart)
+let activeMantra = 'first';
+
 // Serve static files
 function serveStatic(path: string): Response | null {
 	const actualPath = path === '/' ? 'index.html' : path;
@@ -95,6 +98,25 @@ const server = Bun.serve({
 			// Health check
 			if (path === '/api/health') {
 				return Response.json({ status: 'ok', timestamp: new Date().toISOString() }, { headers: jsonHeaders });
+			}
+
+			// GET /api/active-mantra - Get currently active mantra
+			if (path === '/api/active-mantra' && req.method === 'GET') {
+				return Response.json({ name: activeMantra }, { headers: jsonHeaders });
+			}
+
+			// PUT /api/active-mantra - Set active mantra (called when user switches tabs)
+			if (path === '/api/active-mantra' && req.method === 'PUT') {
+				const body = await req.json() as { name: string };
+				activeMantra = body.name;
+				return Response.json({ name: activeMantra }, { headers: jsonHeaders });
+			}
+
+			// POST /api/action-button - Increment the currently active mantra (for action button)
+			if (path === '/api/action-button' && req.method === 'POST') {
+				const date = today();
+				const result = incrementMantra(activeMantra, date);
+				return Response.json({ ...result, activeMantra }, { headers: jsonHeaders });
 			}
 
 			// GET /api/mantras - Get today's mantras

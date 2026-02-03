@@ -58,18 +58,40 @@
 
 	// Swipe handling
 	let touchStartX = 0;
+	let touchStartY = 0;
 
 	function handleTouchStart(e: TouchEvent) {
 		touchStartX = e.touches[0].clientX;
+		touchStartY = e.touches[0].clientY;
 	}
 
 	function handleTouchEnd(e: TouchEvent) {
-		const diff = touchStartX - e.changedTouches[0].clientX;
-		if (Math.abs(diff) > 50) {
-			if (diff > 0 && activeIndex < $mantras.length - 1) {
+		const diffX = touchStartX - e.changedTouches[0].clientX;
+		const diffY = touchStartY - e.changedTouches[0].clientY;
+
+		// Only trigger swipe if horizontal movement is significant and greater than vertical
+		if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY) * 2) {
+			if (diffX > 0 && activeIndex < $mantras.length - 1) {
 				activeIndex++;
-			} else if (diff < 0 && activeIndex > 0) {
+				updateActiveMantra();
+			} else if (diffX < 0 && activeIndex > 0) {
 				activeIndex--;
+				updateActiveMantra();
+			}
+		}
+	}
+
+	// Track active mantra for action button
+	async function updateActiveMantra() {
+		if ($mantras[activeIndex]) {
+			try {
+				await fetch('/api/active-mantra', {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: $mantras[activeIndex].name })
+				});
+			} catch (e) {
+				// Silently fail - not critical
 			}
 		}
 	}
@@ -77,6 +99,11 @@
 	onMount(() => {
 		loadData();
 	});
+
+	// Set initial active mantra after data loads
+	$: if ($mantras.length > 0 && !loading) {
+		updateActiveMantra();
+	}
 
 	$: if ($dateString) {
 		loadData();
