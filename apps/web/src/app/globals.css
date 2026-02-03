@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+:root {
+  --color-earth-50: #faf6f1;
+  --color-earth-100: #f0e6d8;
+  --color-earth-200: #e4d4be;
+  --color-earth-300: #d4bc9a;
+  --color-earth-400: #c4a47a;
+  --color-earth-500: #b08d5e;
+  --color-earth-600: #9a7650;
+  --color-earth-700: #7d5f43;
+  --color-earth-800: #664d39;
+  --color-earth-900: #544030;
+  --color-earth-950: #2d2118;
+
+  --color-saffron-400: #ff9d37;
+  --color-saffron-500: #ff8210;
+  --color-saffron-600: #f06806;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: linear-gradient(180deg, #2d2118 0%, #1a140e 100%);
+  color: #f0e6d8;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+@theme inline {
+  --color-earth-50: #faf6f1;
+  --color-earth-100: #f0e6d8;
+  --color-earth-200: #e4d4be;
+  --color-earth-300: #d4bc9a;
+  --color-earth-400: #c4a47a;
+  --color-earth-500: #b08d5e;
+  --color-earth-600: #9a7650;
+  --color-earth-700: #7d5f43;
+  --color-earth-800: #664d39;
+  --color-earth-900: #544030;
+  --color-earth-950: #2d2118;
+
+  --color-saffron-50: #fff8ed;
+  --color-saffron-100: #ffefd4;
+  --color-saffron-200: #ffdba8;
+  --color-saffron-300: #ffc170;
+  --color-saffron-400: #ff9d37;
+  --color-saffron-500: #ff8210;
+  --color-saffron-600: #f06806;
+  --color-saffron-700: #c74e07;
+  --color-saffron-800: #9e3d0e;
+  --color-saffron-900: #7f340f;
+  --color-saffron-950: #451805;
+}

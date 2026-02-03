@@ -20,18 +20,5 @@
 			"type": "image/png",
 			"purpose": "any maskable"
 		}
-	],
-	"categories": ["lifestyle", "health"],
-	"shortcuts": [
-		{
-			"name": "Practice",
-			"url": "/",
-			"icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
-		},
-		{
-			"name": "Daily",
-			"url": "/daily",
-			"icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
-		}
 	]
 }

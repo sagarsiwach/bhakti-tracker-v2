@@ -22,8 +22,8 @@ WORKDIR /app
 # Create data directory for SQLite
 RUN mkdir -p /app/data
 
-# Copy built web assets
-COPY --from=web-builder /app/apps/web/build ./build
+# Copy built web assets (Next.js static export goes to 'out')
+COPY --from=web-builder /app/apps/web/out ./build
 
 # Copy server
 COPY server ./server
