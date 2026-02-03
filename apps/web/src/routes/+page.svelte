@@ -93,7 +93,7 @@
 
 	<div class="px-5">
 		<div class="flex items-center justify-between">
-			<DatePicker {selectedDate} on:change={handleDateChange} />
+			<DatePicker selectedDate={$selectedDate} on:change={handleDateChange} />
 
 			<!-- Streak badge -->
 			{#if $streak > 0}

@@ -45,7 +45,7 @@
 	<Header title="Daily" />
 
 	<div class="px-5 mb-4">
-		<DatePicker {selectedDate} on:change={handleDateChange} />
+		<DatePicker selectedDate={$selectedDate} on:change={handleDateChange} />
 	</div>
 
 	<main class="flex-1 px-5 pb-8 overflow-y-auto">
