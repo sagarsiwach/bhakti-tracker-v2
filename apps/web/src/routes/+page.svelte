@@ -110,12 +110,7 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="flex flex-col min-h-screen"
-	on:touchstart={handleTouchStart}
-	on:touchend={handleTouchEnd}
->
+<div class="flex flex-col min-h-screen">
 	<Header title="Practice" />
 
 	<div class="px-5">
