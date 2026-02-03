@@ -52,3 +52,17 @@ button:focus-visible {
 	outline: 2px solid var(--color-accent);
 	outline-offset: 2px;
 }
+
+/* Safe area for notch/home indicator */
+.pt-safe {
+	padding-top: env(safe-area-inset-top);
+}
+
+.pb-safe {
+	padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Prevent pull-to-refresh */
+html {
+	overscroll-behavior-y: contain;
+}
