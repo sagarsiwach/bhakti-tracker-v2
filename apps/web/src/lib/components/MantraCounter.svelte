@@ -19,6 +19,13 @@
 		}
 	}
 
+	function handleTouch(e: TouchEvent) {
+		e.stopPropagation();
+		if (!disabled) {
+			dispatch('increment');
+		}
+	}
+
 	function getMantraIcon(name: string): string {
 		const icons: Record<string, string> = {
 			first: '🙏',
@@ -90,6 +97,7 @@
 		<!-- Center button -->
 		<button
 			on:click={handleClick}
+			on:touchend|preventDefault|stopPropagation={handleTouch}
 			{disabled}
 			class="absolute flex flex-col items-center justify-center w-52 h-52 rounded-full
 				transition-all duration-200 ease-out
